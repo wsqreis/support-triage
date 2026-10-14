@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Noteflow Support · Agent Console</title>
+  <style>
+    :root {
+      --bg: #f5f6f8; --panel: #fff; --text: #1b1f24; --muted: #667085; --border: #e3e6ea;
+      --accent: #3b5bdb; --urgent: #c92a2a; --high: #e8590c; --normal: #2b8a3e; --low: #868e96; --code: #f1f3f5;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111317; --panel: #1a1d23; --text: #e9ecef; --muted: #98a2b3; --border: #2c313a;
+        --accent: #748ffc; --urgent: #ff6b6b; --high: #ffa94d; --normal: #69db7c; --low: #adb5bd; --code: #22262e;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
+    header h1 { margin: 0; font-size: 17px; }
+    header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+    main { display: grid; grid-template-columns: 320px minmax(0, 1fr) 340px; gap: 16px; padding: 16px; max-width: 1400px; margin: 0 auto; }
+    @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+    section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+    h2 { font-size: 14px; margin: 0 0 10px; }
+    .item { padding: 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+    .item.active { border-color: var(--accent); }
+    .item .subject { font-weight: 600; }
+    .meta { color: var(--muted); font-size: 12px; }
+    .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 99px; border: 1px solid currentColor; margin-right: 4px; }
+    .URGENT { color: var(--urgent); } .HIGH { color: var(--high); } .NORMAL { color: var(--normal); } .LOW { color: var(--low); }
+    .RULES { color: var(--high); } .LLM { color: var(--accent); }
+    .empty { color: var(--muted); }
+    textarea, input { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+    textarea { min-height: 160px; resize: vertical; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+    button { font: inherit; border: 0; border-radius: 8px; padding: 8px 14px; background: var(--accent); color: #fff; cursor: pointer; margin-top: 10px; }
+    button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); margin: 4px 4px 0 0; padding: 4px 10px; font-size: 12px; }
+    .body { white-space: pre-wrap; background: var(--code); padding: 10px; border-radius: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 10px 0; }
+    .grid div { background: var(--code); border-radius: 8px; padding: 6px 10px; }
+    .grid span { display: block; font-size: 11px; color: var(--muted); }
+    .notice { padding: 8px 10px; border-radius: 8px; background: var(--code); color: var(--muted); margin-top: 8px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Noteflow Support · Agent Console</h1>
+  <p>Tickets are triaged by an LLM (rules when it is unavailable) and come with a draft reply grounded in the help center. Nothing reaches a customer until an agent approves it.</p>
+</header>
+<main>
+  <section>
+    <h2>Queue <span class="meta" id="queue-count"></span></h2>
+    <div id="pending"></div>
+    <div id="queue"><p class="empty">No tickets waiting.</p></div>
+  </section>
+
+  <section id="detail"><p class="empty">Select a ticket from the queue.</p></section>
+
+  <section>
+    <h2>Simulate a customer</h2>
+    <div id="samples"></div>
+    <form id="new-ticket">
+      <label for="email">Customer email</label>
+      <input id="email" type="email" value="customer@example.com" required>
+      <label for="subject">Subject</label>
+      <input id="subject" required maxlength="200">
+      <label for="body">Message</label>
+      <textarea id="body" required maxlength="5000"></textarea>
+      <button>Open ticket</button>
+    </form>
+  </section>
+</main>
+<script>
+  const samples = [
+    ['Charged twice', 'Hi, I was charged twice for my annual Pro plan this morning. Can you refund one of the charges?'],
+    ['Notes missing on my phone', 'Notes I wrote on my laptop yesterday are not on my phone. Both are signed in. What should I do?'],
+    ['Esqueci minha senha', 'Não consigo entrar na minha conta, esqueci a senha e o email de recuperação não chega.'],
+    ['Dark mode for the web app?', 'Love Noteflow! Any plans for a dark mode in the web app? It would be great.'],
+    ['App crashes when I open a notebook', 'Since the last update the desktop app closes every time I open my Work notebook. I cannot work.'],
+  ];
+  const pending = new Map(); // ticket id -> subject, until triage arrives
+  let selected = null;
+
+  const el = (tag, props = {}, children = []) => { const n = Object.assign(document.createElement(tag), props); n.append(...children); return n; };
+  const badge = (text, cls = text) => el('span', { className: `badge ${cls}`, textContent: text });
+  const api = async (path, options) => {
+    const response = await fetch(path, { headers: { 'content-type': 'application/json' }, ...options });
+    const body = response.status === 204 ? null : await response.json();
+    if (!response.ok) throw new Error(body?.detail || `HTTP ${response.status}`);
+    return body;
+  };
+
+  for (const [subject, body] of samples) {
+    document.getElementById('samples').append(el('button', {
+      type: 'button', className: 'secondary', textContent: subject,
+      onclick: () => { document.getElementById('subject').value = subject; document.getElementById('body').value = body; },
+    }));
+  }
+
+  document.getElementById('new-ticket').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const ticket = await api('/api/tickets', { method: 'POST', body: JSON.stringify({
+      customerEmail: document.getElementById('email').value,
+      subject: document.getElementById('subject').value,
+      body: document.getElementById('body').value,
+    }) });
+    pending.set(ticket.id, ticket.subject);
+    document.getElementById('subject').value = '';
+    document.getElementById('body').value = '';
+    refresh();
+  });
+
+  async function refresh() {
+    for (const id of [...pending.keys()]) {
+      const ticket = await api(`/api/tickets/${id}`);
+      if (ticket.status !== 'NEW') pending.delete(id);
+    }
+    document.getElementById('pending').replaceChildren(...[...pending.values()].map((subject) =>
+      el('div', { className: 'item' }, [el('div', { className: 'subject', textContent: subject }), el('div', { className: 'meta', textContent: 'Waiting for triage…' })])));
+
+    const queue = await api('/api/tickets/queue');
+    document.getElementById('queue-count').textContent = queue.length ? `(${queue.length})` : '';
+    document.getElementById('queue').replaceChildren(...(queue.length ? queue.map((t) =>
+      el('div', { className: `item ${t.id === selected ? 'active' : ''}`, onclick: () => show(t.id) }, [
+        el('div', { className: 'subject', textContent: t.subject }),
+        el('div', {}, [badge(t.priority), badge(t.category, ''), t.status === 'NEEDS_HUMAN' ? badge('NO DRAFT', 'HIGH') : '']),
+        el('div', { className: 'meta', textContent: `${t.customerEmail} · ${new Date(t.createdAt).toLocaleTimeString()}` }),
+      ])) : [el('p', { className: 'empty', textContent: 'No tickets waiting.' })]));
+  }
+
+  async function show(id) {
+    selected = id;
+    const t = await api(`/api/tickets/${id}`);
+    const detail = document.getElementById('detail');
+    const facts = [['Category', t.category], ['Priority', t.priority], ['Sentiment', t.sentiment], ['Language', t.language], ['Triaged by', t.triageSource]];
+    const reply = el('textarea', { value: t.draftReply ?? '', placeholder: 'No draft: the help center did not cover this. Write the reply here.' });
+    const send = el('button', { textContent: t.draftReply ? 'Approve and send' : 'Send reply' });
+    send.onclick = async () => {
+      try {
+        await api(`/api/tickets/${id}/resolve`, { method: 'POST', body: JSON.stringify({ reply: reply.value }) });
+        selected = null;
+        detail.replaceChildren(el('p', { className: 'notice', textContent: 'Reply sent. Ticket resolved.' }));
+        refresh();
+      } catch (e) { alert(e.message); }
+    };
+    detail.replaceChildren(
+      el('h2', { textContent: t.subject }),
+      el('div', { className: 'meta', textContent: t.customerEmail }),
+      el('div', { className: 'grid' }, facts.map(([k, v]) => el('div', {}, [el('span', { textContent: k }), badge(v ?? '–', v ?? '')]))),
+      el('label', { textContent: 'Summary' }), el('div', { textContent: t.summary ?? '–' }),
+      el('label', { textContent: 'Customer message' }), el('div', { className: 'body', textContent: t.body }),
+      el('label', { textContent: t.draftReply ? 'Draft reply (edit before sending)' : 'Reply' }), reply,
+      t.citations.length ? el('div', { className: 'meta', textContent: `Based on: ${t.citations.join(', ')}` }) : '',
+      t.triageSource === 'RULES' ? el('p', { className: 'notice', textContent: 'The LLM was unavailable, so this ticket was classified by keyword rules. Double-check the labels.' }) : '',
+      send,
+    );
+    refresh();
+  }
+
+  refresh();
+  setInterval(refresh, 3000);
+</script>
+</body>
+</html>

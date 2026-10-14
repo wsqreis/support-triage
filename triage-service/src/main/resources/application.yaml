@@ -1,0 +1,62 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: triage-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${TRIAGE_DB_URL:jdbc:postgresql://localhost:5432/triage}
+    username: ${DB_USER:triage}
+    password: ${DB_PASSWORD:triage}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        # Fail fast when the broker is down (the default blocks for 60s); the outbox or the listener retries.
+        max.block.ms: 5000
+  ai:
+    # Chat goes to OpenRouter through its OpenAI-compatible API; embeddings run locally (ONNX), at no cost.
+    model:
+      embedding: transformers
+      image: none
+      audio:
+        speech: none
+        transcription: none
+      moderation: none
+    openai:
+      base-url: ${LLM_BASE_URL:https://openrouter.ai/api/v1}
+      # Without a key every LLM call fails, the circuit opens, and triage runs on the rules alone.
+      api-key: ${OPENROUTER_API_KEY:not-configured}
+      chat:
+        options:
+          model: ${LLM_MODEL:nvidia/nemotron-3-super-120b-a12b:free}
+          temperature: 0.0
+    embedding:
+      transformer:
+        cache:
+          directory: ${user.home}/.cache/support-triage/onnx
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        dimensions: 384
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+
+triage:
+  llm:
+    timeout: 30s
+  draft:
+    similarity-threshold: 0.45
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
