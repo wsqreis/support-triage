@@ -135,7 +135,8 @@
     const t = await api(`/api/tickets/${id}`);
     const detail = document.getElementById('detail');
     const facts = [['Category', t.category], ['Priority', t.priority], ['Sentiment', t.sentiment], ['Language', t.language], ['Triaged by', t.triageSource]];
-    const reply = el('textarea', { value: t.draftReply ?? '', placeholder: 'No draft: the help center did not cover this. Write the reply here.' });
+    const noDraft = t.triageSource === 'RULES' ? 'No draft: the LLM was unavailable.' : 'No draft: the help center did not cover this.';
+    const reply = el('textarea', { value: t.draftReply ?? '', placeholder: `${noDraft} Write the reply here.` });
     const send = el('button', { textContent: t.draftReply ? 'Approve and send' : 'Send reply' });
     send.onclick = async () => {
       try {

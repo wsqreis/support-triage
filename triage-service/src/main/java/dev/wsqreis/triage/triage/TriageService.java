@@ -3,6 +3,7 @@ package dev.wsqreis.triage.triage;
 import dev.wsqreis.triage.contracts.Category;
 import dev.wsqreis.triage.contracts.TicketCreated;
 import dev.wsqreis.triage.contracts.TicketTriaged;
+import dev.wsqreis.triage.contracts.TriageSource;
 import dev.wsqreis.triage.triage.classify.TicketClassifier;
 import dev.wsqreis.triage.triage.knowledge.Draft;
 import dev.wsqreis.triage.triage.knowledge.ReplyDrafter;
@@ -27,7 +28,8 @@ public class TriageService {
 
     public TicketTriaged triage(TicketCreated ticket) {
         var classification = classifier.classify(ticket.subject(), ticket.body());
-        Optional<Draft> draft = classification.category() == Category.OTHER
+        // Rule-based labels mean the model just failed: asking it for a draft would only wait on it again.
+        Optional<Draft> draft = classification.category() == Category.OTHER || classification.source() == TriageSource.RULES
                 ? Optional.empty()
                 : drafter.draft(ticket.subject(), ticket.body(), classification);
         return new TicketTriaged(
