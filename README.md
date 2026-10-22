@@ -83,7 +83,7 @@ Open **http://localhost:8081**: the agent console has the priority queue, the tr
 | Variable | Default | |
 |---|---|---|
 | `OPENROUTER_API_KEY` | – | Without it, triage runs on rules only |
-| `LLM_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Any OpenRouter model id |
+| `LLM_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b:free` | Any OpenRouter model id |
 | `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | Any OpenAI-compatible endpoint |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | |
 | `TICKETS_DB_URL` / `TRIAGE_DB_URL` | `jdbc:postgresql://localhost:5432/tickets` / `.../triage` | |
